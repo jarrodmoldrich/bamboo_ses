@@ -21,30 +21,34 @@ defmodule Bamboo.SesAdapter do
 
   def deliver(email, config) do
     ex_aws_config = Map.get(config, :ex_aws, [])
-    template = email.private[:template]
-    configuration_set_name = email.private[:configuration_set_name]
-    template_data = email.private[:template_data]
+    opts = [
+      configuration_set_name: email.private[:configuration_set_name],
+      tags: email.private[:tags]
+    ]
+    opts = for {opt, value} when value != nil <- opts,
+      do: {opt, value}
 
-    case Mail.build_multipart()
-         |> Mail.put_from(prepare_address(email.from))
-         |> Mail.put_to(prepare_addresses(email.to))
-         |> Mail.put_cc(prepare_addresses(email.cc))
-         |> Mail.put_bcc(prepare_addresses(email.bcc))
-         |> Mail.put_subject(maybe_rfc1342_encode(email.subject))
-         |> put_headers(email.headers)
-         |> put_text(email.text_body)
-         |> put_html(email.html_body)
-         |> put_attachments(email.attachments)
-         |> Mail.render(RFC2822Renderer)
-         |> SES.send_raw_email(
-           configuration_set_name: configuration_set_name,
-           template: template,
-           template_data: template_data
-         )
-         |> ExAws.request(ex_aws_config) do
+    send_email(email, opts)
+    |> ExAws.request(ex_aws_config)
+    |> case do
       {:ok, response} -> {:ok, response}
       {:error, reason} -> {:error, build_api_error(inspect(reason))}
     end
+  end
+
+  defp send_email(email, opts) do
+    Mail.build_multipart()
+    |> Mail.put_from(prepare_address(email.from))
+    |> Mail.put_to(prepare_addresses(email.to))
+    |> Mail.put_cc(prepare_addresses(email.cc))
+    |> Mail.put_bcc(prepare_addresses(email.bcc))
+    |> Mail.put_subject(maybe_rfc1342_encode(email.subject))
+    |> put_headers(email.headers)
+    |> put_text(email.text_body)
+    |> put_html(email.html_body)
+    |> put_attachments(email.attachments)
+    |> Mail.render(RFC2822Renderer)
+    |> SES.send_raw_email(opts)
   end
 
   defp put_headers(message, headers) when is_map(headers),
